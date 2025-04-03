@@ -1,0 +1,15 @@
+services:
+  mosquitto:
+    build: ./mqtt-broker
+    container_name: mqtt_broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"  # MQTT port
+      - "9001:9001"  # WebSocket port # Not used by us - maybe for frontend?
+    volumes:
+      # - ./mqtt-broker/certs:/mosquitto/certs
+      - ./mqtt-broker/config:/mosquitto/config
+      - ./mqtt-broker/log:/mosquitto/log
+      - /mosquitto/data
+    environment:
+      - TZ=UTC
