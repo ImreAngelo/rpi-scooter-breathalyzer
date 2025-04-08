@@ -2,6 +2,7 @@ import json
 import paho.mqtt.client as mqtt
 
 from stmpy import Machine, Driver
+from threading import Thread
 
 ##
 class MQTT_Client:
@@ -16,7 +17,7 @@ class MQTT_Client:
 		self.client.on_connect = self.on_connect
 		self.client.on_message = self.on_message
 
-		self.client.tls_set(tls_version=mqtt.ssl.PROTOCOL_TLS)
+		# self.client.tls_set(tls_version=mqtt.ssl.PROTOCOL_TLS)
 		self.client.username_pw_set(username, password)
 
 	def on_connect(self, client, userdata, flags, rc):
@@ -64,19 +65,30 @@ class MQTT_Client:
 		self.client.connect(broker, port)
 
 		try:
-			self.client.loop_forever()
+			# line below should not have the () after the function!
+			thread = Thread(target=self.client.loop_forever)
+			thread.start()
 		except KeyboardInterrupt:
 			print("Interrupted")
 			self.client.disconnect()
 
+		# try:
+		# 	self.client.loop_forever()
+		# except KeyboardInterrupt:
+		# 	print("Interrupted")
+		# 	self.client.disconnect()
+
 
 ##
 class App:
-	def __init__(self, mqtt_client, id):
+	def __init__(self, mqtt_client, id, pos):
 		self.id = id
-		self.pos = [100, 200]
+		self.pos = pos
 		# Consider making this null to couple at same time as stm_driver
 		self.mqtt_client = mqtt_client
+		self.scooters = []
+		self.last_test = 0
+		self.checksum = 0
 
 	################
 	# MQTT Wrapper #
@@ -111,11 +123,17 @@ class App:
 			"loc": self.pos # TODO: custom
 		})
 
+		self.log(f"Last test from {self.last_test}")
+		self.last_test = 0
+		self.checksum = 0
+		self.log(f"Last test to {self.last_test}")
+
 	def on_exit_list_scooter(self):
 		self.unsubscribe(f"available/{self.id}/res")
 
 	def add_scooter(self, s_id, loc):
 		# add_scooter(scooter_id, loc) to frontend
+		self.scooters.append({"s_id": s_id, "loc": loc})
 		self.log(f"ID: {s_id}, loc: {loc}")
 
 	def on_enter_reserving(self):
@@ -125,6 +143,10 @@ class App:
 		self.publish(f"unlock/{self.active_scooter}", {
 			"user_id": self.id
 		})
+		
+		self.log(f"Last test from {self.last_test}")
+		self.last_test = -1
+		self.log(f"Last test to {self.last_test}")
 
 	def on_enter_breathalyzer(self):
 		self.unsubscribe(f"unlock/{self.active_scooter}")
@@ -140,42 +162,7 @@ class App:
 		self.log(f"Saving ID: {s_id}")
 		self.active_scooter = s_id
 
-
-##### 
-broker, port = "602b94dba5e94866b68426d4ae3e72fd.s1.eu.hivemq.cloud", 8883
-username, password, id = "scooter_app", "Powerpuffs100", 69
-
-myclient = MQTT_Client(id, username, password)
-app = App(myclient, id)
-
-# Scooter state machine
-transitions = [
-	{'source':'initial', 'target':'list scooters', 'effect':'log("A")'},
-	{'trigger':'choose_scooter', 'source':'list scooters', 'target':'reserving', 'effect':'save_scooter_id(*)'},
-	{'trigger':'unlock', 'source':'reserving', 'target':'breathalyzer', 'effect':'log("Confirmed scooter reservation")'},
-	{'trigger':'unlock_ack', 'source':'breathalyzer', 'target':'riding', 'effect':'log("Unlocked scooter!")'},
-	{'trigger':'unlock_fail', 'source':'breathalyzer', 'target':'list scooters', 'effect':'log("Failed bac test!")'},
-	{'trigger':'lock_btn', 'source':'riding', 'target':'locking', 'effect':'log("Locking scooter")'},
-	{'trigger':'lock', 'source':'locking', 'target':'list scooters', 'effect':'log("Locked scooter")'}
-]
-
-states = [
-	# Alt. 3 - Perfect
-	{'name':'list scooters', 'entry':'on_enter_list_scooters', 'exit':'on_exit_list_scooter', 'available':'add_scooter(*)'},
-	{'name':'reserving', 'entry':'on_enter_reserving'},
-	{'name':'locking', 'entry':'on_enter_locking', 'exit':'on_exit_locking'},
-]
-
-app_stm = Machine(transitions=transitions, states=states, obj=app, name="app")
-app.stm = app_stm
-
-driver = Driver()
-driver.add_machine(app_stm)
-
-# MQTT Client coupling
-myclient.stm_driver = driver
-
-# Start
-driver.start()
-myclient.start(broker, port)
-driver.stop()
+	def on_enter_riding(self):
+		self.log(f"PROLBEM Last test from {self.checksum}")
+		self.checksum = 10
+		self.log(f"VERY IMPORTANT HERE {self.last_test} / {self.checksum}")
